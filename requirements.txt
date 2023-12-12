@@ -1,0 +1,9 @@
+pandas
+scikit-learn
+opencv-python
+albumentations
+matplotlib
+segmentation_models_pytorch
+pydicom
+wandb
+easydict
