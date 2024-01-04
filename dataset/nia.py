@@ -91,15 +91,7 @@ class NIADataset:
             if len(_ann['anno']) > 0:
                 data.append(_ann)
                 data_id += 1
-                # vis_img = copy.deepcopy(img_bgr)
-                # for item in _ann['anno']:
-                #     x, y, z = item['keypoint_3d']
-                #     print('item: ', item['keypoint_3d'])
-                #     vis_img = cv2.circle(vis_img, (y, z), 5, (0, 0, 255), -1)
-                #     vis_img = cv2.putText(vis_img, self.cat_name[item['category_id']], (y-2, z), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1)
-                # vis_path = f'/workspace/data/vis/{os.path.basename(image_path).replace(".dcm", ".jpg")}'
-                # cv2.imwrite(vis_path, vis_img)
-                # print(f'Visualize in path {vis_path}')
+
         print(f'End loading data. The number of data: {len(data)}')
         print('**************************************************')
         for k, v in cls_n.items():

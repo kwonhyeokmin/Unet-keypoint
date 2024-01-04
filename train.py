@@ -90,7 +90,7 @@ if __name__ == '__main__':
             'ValCrossEntropyLoss': torch.tensor(0.).float(),
         }
         avg_loss = 0.0
-        for step, (images, masks, _, _) in pbar:
+        for step, (images, masks, _, _, _) in pbar:
             B = images.shape[0]
             images = images.to(device, dtype=torch.float)
             masks = masks.to(device, dtype=torch.float)
@@ -118,7 +118,7 @@ if __name__ == '__main__':
         # ****************
         vpbar = tqdm(enumerate(val_generator), total=len(val_generator), desc=f'Val - epoch: {epoch}')
         val_avg_loss = 0.0
-        for step, (images, masks, _, _) in vpbar:
+        for step, (images, masks, _, _, _) in vpbar:
             B = images.shape[0]
             images = images.to(device, dtype=torch.float)
             masks = masks.to(device, dtype=torch.float)

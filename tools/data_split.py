@@ -5,9 +5,9 @@ import math
 import pandas as pd
 from collections import deque
 import os
-import pydicom
 from tqdm import tqdm
 from collections import Counter
+
 
 if __name__ == '__main__':
     # Directory setting

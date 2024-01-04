@@ -1,7 +1,7 @@
 PROJECT_NAME: 'unet-keypoint-nia'
 SEED_VALUE: -1
 TRAINING:
-  EPOCHS: 100
+  EPOCHS: 150
 OPTIMIZER:
   TYPE: 'adam'
   LR: 1e-4

@@ -12,13 +12,17 @@ from tqdm import tqdm
 import argparse
 import matplotlib.pyplot as plt
 import copy
+from datetime import datetime
+from sklearn.metrics import precision_recall_curve
 
 
 
 def make_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', required=True, help='Path to model checkpoint for evaluate')
-
+    parser.add_argument('--is_vis',
+                        help='True/False of visualization. If you store option, it means true',
+                        action='store_true')
     args = parser.parse_args()
     return args
 
@@ -75,6 +79,9 @@ def get_max_preds(batch_heatmaps):
 
 if __name__ == '__main__':
     args = make_args()
+    now = datetime.now()
+    dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+    print('Start evaluation. ', dt_string)
 
     # Select device (gpu | cpu)
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -104,8 +111,16 @@ if __name__ == '__main__':
     colors = [cmap(i) for i in np.linspace(0, 1, len(dataset.cat_name) + 2)]
     colors = [(c[2] * 255, c[1] * 255, c[0] * 255) for c in colors]
 
-    pbar = tqdm(enumerate(data_generator), total=len(data_generator), desc='Eval ')
-    for step, (images, masks, images_bgr, areas) in pbar:
+    cnt = 0
+    stp, sfp, recall, precision = 0, 0, 0, 0
+    score_list, correct_list = [], []
+
+    s = ('%4s' + '%37s' + '%5s' * 8 + '%42s' * 2) % ('No', 'DataID', 'TP', 'TN', 'FP', 'FN', 'sTP', 'sFP', 'P', 'R', 'GT', 'Pred')
+    print()
+    print(s)
+
+    pbar = tqdm(enumerate(data_generator), total=len(data_generator))
+    for step, (images, masks, images_bgr, areas, data_ids) in pbar:
         images = images.to(device, dtype=torch.float)
         masks = masks.to(device, dtype=torch.float)
         B, C, H, W = images.shape
@@ -113,43 +128,77 @@ if __name__ == '__main__':
             y_pred_heatmap = model(images)
         preds, maxvals = get_max_preds(y_pred_heatmap)
         gt_kpts, _ = get_max_preds(masks)
+
         # calculate oks
-        for iou_thrs in [0.50, 0.75, 0.95]:
-            oks_score = oks(gt_kpts.cpu().numpy(), preds.cpu().numpy(), areas.cpu().numpy())
-            iou_score = np.where(oks_score > iou_thrs, 1, 0).mean()
-            score[f'iou:{iou_thrs:.2f}'].append(float(iou_score))
+        for oks_thrs in [0.50]:
+            _score = oks(gt_kpts.cpu().numpy(), preds.cpu().numpy(), areas.cpu().numpy())
+            mAP_score = np.where(_score > oks_thrs, 1, 0).mean()
+            score[f'AP:{oks_thrs:.2f}'].append(float(mAP_score))
+
+        iou_thrs = 0.50
+        _score = oks(gt_kpts.cpu().numpy(), preds.cpu().numpy(), areas.cpu().numpy())
+        for b in range(B):
+            tp = int(_score[b] >= iou_thrs)
+            tn = 0.0
+            fp = 0.0
+            fn = int(_score[b] < iou_thrs)
+
+            sfp += fp
+            stp += tp
+            precision = round(precision + tp / (tp + fp + 0.001), 2)
+            recall = round(recall + tp / (tp + fn + 0.001), 2)
+            pbar.set_description(('%4s' + '%37s' + '%5s' * 8 + '%42s' * 2) %
+                                 (cnt, data_ids[b], tp, tn, fp, fn, stp, sfp, precision, recall, gt_kpts[b].cpu().numpy().flatten().tolist(), preds[b].cpu().numpy().flatten().tolist()))
+            score_list.append(int(_score[b]))
+            correct_list.append(tp)
+            cnt += 1
 
         # ****************
         # 4. Visualization (with first batch)
         # ****************
-        for b in range(B):
-            # GT
-            gt_vis_img = copy.deepcopy(images_bgr[b]).cpu().numpy()
-            vis_path = f'{cfg.vis_dir}/bi_{str(step*10 + b).zfill(3)}.jpg'
-            gt_kpt = gt_kpts[b]
-            for cat_id, gt_kpt in enumerate(gt_kpt):
-                gt_vis_img = cv2.circle(gt_vis_img, (int(gt_kpt[0]), int(gt_kpt[1])), 5, (255, 0, 0), -1)
-                gt_vis_img = cv2.putText(gt_vis_img, dataset.cat_name[cat_id], (int(gt_kpt[0])-2, int(gt_kpt[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1)
-            # vis_path = f'{cfg.vis_dir}/gt_{str(step*10 + b).zfill(3)}.jpg'
-            # cv2.imwrite(vis_path, gt_vis_img)
-            # print(f'Visualize in path {vis_path}')
+        if args.is_vis:
+            for b in range(B):
+                # GT
+                gt_vis_img = copy.deepcopy(images_bgr[b]).cpu().numpy()
+                vis_path = f'{cfg.vis_dir}/bi_{str(step*10 + b).zfill(3)}.jpg'
+                gt_kpt = gt_kpts[b]
+                for cat_id, gt_kpt in enumerate(gt_kpt):
+                    gt_vis_img = cv2.circle(gt_vis_img, (int(gt_kpt[0]), int(gt_kpt[1])), 5, (255, 0, 0), -1)
+                    gt_vis_img = cv2.putText(gt_vis_img, dataset.cat_name[cat_id], (int(gt_kpt[0])-2, int(gt_kpt[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1)
 
-            # Pred
-            pred_vis_img = copy.deepcopy(images_bgr[b]).cpu().numpy()
-            pred = preds[b]
-            for cat_id, pred_kpt in enumerate(pred):
-                pred_vis_img = cv2.circle(pred_vis_img, (int(pred_kpt[0]), int(pred_kpt[1])), 5, (0, 0, 255), -1)
-                pred_vis_img = cv2.putText(pred_vis_img, dataset.cat_name[cat_id], (int(pred_kpt[0])-2, int(pred_kpt[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1)
-            # vis_path = f'/workspace/data/vis/pred_{str(step*10 + b).zfill(3)}.jpg'
-            # vis_path = f'{cfg.vis_dir}/pred_{str(step*10 + b).zfill(3)}.jpg'
-            # cv2.imwrite(vis_path, pred_vis_img)
-            # print(f'Visualize in path {vis_path}')
-            merge_img = np.concatenate((gt_vis_img, pred_vis_img), axis=1)
-            vis_path = f'{cfg.vis_dir}/{str(step*10 + b).zfill(3)}.jpg'
-            cv2.imwrite(vis_path, merge_img)
+                # Pred
+                pred_vis_img = copy.deepcopy(images_bgr[b]).cpu().numpy()
+                pred = preds[b]
+                for cat_id, pred_kpt in enumerate(pred):
+                    pred_vis_img = cv2.circle(pred_vis_img, (int(pred_kpt[0]), int(pred_kpt[1])), 5, (0, 0, 255), -1)
+                    pred_vis_img = cv2.putText(pred_vis_img, dataset.cat_name[cat_id], (int(pred_kpt[0])-2, int(pred_kpt[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0), 1)
+
+                merge_img = np.concatenate((gt_vis_img, pred_vis_img), axis=1)
+                vis_path = f'{cfg.vis_dir}/{str(step*10 + b).zfill(3)}.jpg'
+                cv2.imwrite(vis_path, merge_img)
 
     # ****************
     # 3. Print result
     # ****************
+    print()
     for k, v in score.items():
         print(k, ': ', np.mean(v))
+
+    # save graph
+    fig, ax = plt.subplots()
+    precision, recall, thresholds = precision_recall_curve(correct_list, score_list)
+    # create precision recall curve
+    ax.plot(recall, precision)
+
+    # add axis labels to plot
+    ax.axis([0,1,0,1])
+    ax.set_title('Precision-Recall Curve')
+    ax.set_ylabel('Precision')
+    ax.set_xlabel('Recall')
+
+    # display plot
+    plt.savefig(f'../data/PR_curve_kpt.png.png')
+
+    now = datetime.now()
+    dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+    print('End evaluation. ', dt_string)
